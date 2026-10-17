@@ -19,6 +19,8 @@ class EpubReaderChapterSelectionActivity final : public UiListActivity {
   // batch-prewarms the window's fallback glyphs, so each page of the list
   // pays one bounded SD pass and repaints stay RAM-only.
   static constexpr int TOC_WINDOW = 24;
+  // Lines a chapter title may wrap to before it is ellipsized (1 = stock).
+  static constexpr uint8_t TOC_TITLE_MAX_LINES = 3;
   std::string windowLabels[TOC_WINDOW];
   freeink::ui::ListItem windowItems[TOC_WINDOW];
   int windowStart = -1;

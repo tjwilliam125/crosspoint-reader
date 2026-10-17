@@ -143,6 +143,11 @@ void EpubReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
   props.count = static_cast<uint16_t>(listCount());
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  // Long chapter titles wrap instead of truncating to one ellipsized line.
+  // Rows grow to fit; list() reports the rows that actually fit back to the
+  // nav, so selection/paging stay correct with variable-height rows.
+  props.labelText = screen.theme().bodyText;
+  props.labelText.maxLines = TOC_TITLE_MAX_LINES;
   syncListViewport(screen, props);
   // Materialize the row window for the final viewport (syncListViewport just
   // applied follow/clamping to nav.top) and hand list() the window with its
@@ -150,6 +155,7 @@ void EpubReaderChapterSelectionActivity::buildScreen(UiScreen& screen) {
   refreshTocWindow(nav.top);
   props.items = windowItems;
   props.itemsWindowFirst = static_cast<uint16_t>(windowStart);
+  props.itemsWindowCount = static_cast<uint16_t>(windowCount);
   screen.list(props);
 }
 
