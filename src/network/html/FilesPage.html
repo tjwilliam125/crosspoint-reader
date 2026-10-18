@@ -335,6 +335,9 @@
       text-decoration: none;
       cursor: pointer;
     }
+    .folder-row td:not(:first-child):not(.actions-col) {
+      cursor: pointer;
+    }
     .folder-link:hover,
     .file-link:hover {
       color: var(--accent-hover-color);
@@ -377,6 +380,61 @@
     }
     .drop-zone.dragover .drop-zone-hint {
       color: var(--accent-color);
+    }
+    .selected-files {
+      margin-top: 8px;
+      font-size: 0.9em;
+    }
+    .selected-files-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--label-color);
+      margin-bottom: 4px;
+    }
+    .selected-files-clear,
+    .selected-file-remove {
+      background: none;
+      border: none;
+      color: var(--label-color);
+      cursor: pointer;
+      padding: 2px 6px;
+      font-size: 1em;
+    }
+    .selected-files-clear:hover,
+    .selected-file-remove:hover {
+      color: var(--danger-color);
+    }
+    .selected-files-clear:disabled,
+    .selected-file-remove:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    .selected-files-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+    .selected-files-list li {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .selected-file-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .selected-file-size {
+      color: var(--label-color);
+      font-size: 0.85em;
+      white-space: nowrap;
     }
     .upload-btn {
       background-color: var(--success-color);
@@ -1643,8 +1701,15 @@
     <div class="upload-form">
       <p class="file-info">Select a file to upload to <strong id="uploadPathDisplay"></strong></p>
       <div class="drop-zone" id="dropZone">
-        <input type="file" id="fileInput" onchange="validateFile()" multiple>
-        <p class="drop-zone-hint">⬇ Drop files here — or click to browse</p>
+        <input type="file" id="fileInput" onchange="onFileInputChange()" multiple>
+        <p class="drop-zone-hint">⬇ Drop files here — or click to add more</p>
+      </div>
+      <div class="selected-files" id="selectedFiles" style="display:none;">
+        <div class="selected-files-header">
+          <span id="selectedFilesCount"></span>
+          <button type="button" class="selected-files-clear" id="selectedFilesClear" onclick="clearSelectedUploadFiles()">Clear all</button>
+        </div>
+        <ul class="selected-files-list" id="selectedFilesList"></ul>
       </div>
       <div class="picker-columns" id="pickerColumns">
         <div class="convert-options" id="convertOptions" style="display:none;">
@@ -2267,6 +2332,7 @@
     isUploadInProgress = false;
     document.getElementById('uploadModalClose').classList.remove('disabled');
     document.getElementById('fileInput').disabled = false;
+    renderSelectedUploadFiles();
     const progressFill = document.getElementById('progress-fill');
     const progressText = document.getElementById('progress-text');
     progressFill.style.width = '0%';
@@ -2288,6 +2354,7 @@
     fileInput.value = '';
     fileInput.classList.remove('has-files');
     fileInput.disabled = false;
+    setSelectedUploadFiles([]);
     const uploadBtn = document.getElementById('uploadBtn');
     uploadBtn.disabled = true;
     uploadBtn.style.display = 'block';
@@ -3104,7 +3171,17 @@
         return;
       }
       const btn = e.target.closest('[data-action]');
-      if (!btn) return;
+      if (!btn) {
+        // The folder name is a small tap target on phones, so tapping anywhere
+        // else in a folder row opens it too — except the checkbox cell and any
+        // control, which keep their own behavior.
+        const row = e.target.closest('tr.folder-row');
+        if (row && !e.target.closest('a, button, input, td:first-child, .actions-col')) {
+          const folderLink = row.querySelector('.folder-link');
+          if (folderLink) window.location.href = folderLink.getAttribute('href');
+        }
+        return;
+      }
       const name = btn.dataset.name;
       const path = btn.dataset.path;
       if (btn.dataset.action === 'move') {
@@ -3348,15 +3425,94 @@
         const dropped = e.dataTransfer && e.dataTransfer.files;
         if (!dropped || dropped.length === 0) return;
 
-        // Replace the current selection, matching native file-picker semantics.
-        const dt = new DataTransfer();
-        for (const file of dropped) dt.items.add(file);
-        fileInput.files = dt.files;
-
+        // Add to the current selection so files can be gathered across drops.
+        addSelectedUploadFiles(Array.from(dropped));
         validateFile();
       });
     }
   })();
+
+  // Source of truth for the upload queue. A native file input replaces its
+  // selection on every pick (notably on Android, where the picker allows only
+  // one file at a time), so picks are accumulated here and mirrored back into
+  // fileInput.files, which the rest of the upload pipeline reads.
+  let selectedUploadFiles = [];
+
+  const uploadFileKey = f => `${f.name}\u0000${f.size}\u0000${f.lastModified}`;
+
+  function setSelectedUploadFiles(files) {
+    selectedUploadFiles = files;
+    const dt = new DataTransfer();
+    for (const file of files) dt.items.add(file);
+    document.getElementById('fileInput').files = dt.files;
+    renderSelectedUploadFiles();
+  }
+
+  function addSelectedUploadFiles(files) {
+    const seen = new Set(selectedUploadFiles.map(uploadFileKey));
+    const merged = selectedUploadFiles.slice();
+    for (const file of files) {
+      const key = uploadFileKey(file);
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(file);
+      }
+    }
+    setSelectedUploadFiles(merged);
+  }
+
+  function removeSelectedUploadFile(index) {
+    if (isUploadInProgress) return;
+    setSelectedUploadFiles(selectedUploadFiles.filter((_, i) => i !== index));
+    validateFile();
+  }
+
+  function clearSelectedUploadFiles() {
+    if (isUploadInProgress) return;
+    setSelectedUploadFiles([]);
+    validateFile();
+  }
+
+  function onFileInputChange() {
+    const picked = Array.from(document.getElementById('fileInput').files);
+    // An empty change means the picker was dismissed (some browsers clear the
+    // input on cancel); restore the queue instead of wiping it.
+    if (picked.length === 0) setSelectedUploadFiles(selectedUploadFiles);
+    else addSelectedUploadFiles(picked);
+    validateFile();
+  }
+
+  function renderSelectedUploadFiles() {
+    const container = document.getElementById('selectedFiles');
+    const list = document.getElementById('selectedFilesList');
+    if (!container || !list) return;
+    list.replaceChildren();
+    container.style.display = selectedUploadFiles.length > 0 ? 'block' : 'none';
+    const n = selectedUploadFiles.length;
+    document.getElementById('selectedFilesCount').textContent = `${n} file${n === 1 ? '' : 's'} selected`;
+    document.getElementById('selectedFilesClear').disabled = isUploadInProgress;
+    selectedUploadFiles.forEach((file, index) => {
+      const li = document.createElement('li');
+      const name = document.createElement('span');
+      name.className = 'selected-file-name';
+      name.textContent = file.name;
+      name.title = file.name;
+      const size = document.createElement('span');
+      size.className = 'selected-file-size';
+      size.textContent = file.size >= 1048576
+        ? (file.size / 1048576).toFixed(1) + ' MB'
+        : Math.max(1, Math.round(file.size / 1024)) + ' KB';
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'selected-file-remove';
+      remove.setAttribute('aria-label', `Remove ${file.name}`);
+      remove.textContent = '×';
+      remove.disabled = isUploadInProgress;
+      remove.addEventListener('click', () => removeSelectedUploadFile(index));
+      li.append(name, size, remove);
+      list.appendChild(li);
+    });
+  }
 
   function validateFile() {
     const fileInput = document.getElementById('fileInput');
@@ -5710,15 +5866,36 @@ function uploadFileWebSocket(file, onProgress, onComplete, onError) {
 
 // Upload file via HTTP (fallback method)
 function uploadFileHTTP(file, onProgress, onComplete, onError) {
+  return uploadFileHTTPOnce(file, file.name, onProgress)
+    .catch(async error => {
+      // Android Chrome can reject a multipart upload of a file picked from a
+      // cloud provider (e.g. Google Drive) before sending a byte, even though
+      // the same File reads fine. Retry once with an in-memory copy.
+      if (!error.nothingSent || operationCancelled) throw error;
+      console.log('HTTP upload failed before sending, retrying with in-memory copy:', file.name);
+      const copy = new Blob([await file.arrayBuffer()], { type: file.type });
+      return uploadFileHTTPOnce(copy, file.name, onProgress);
+    })
+    .then(() => {
+      if (onComplete) onComplete();
+    }, error => {
+      if (onError && error.message !== 'Upload aborted') onError(error.message);
+      throw error;
+    });
+}
+
+function uploadFileHTTPOnce(body, fileName, onProgress) {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', body, fileName);
+    let bytesSent = 0;
 
     const xhr = new XMLHttpRequest();
     currentUploadXhr = xhr;
     xhr.open('POST', '/upload?path=' + encodeURIComponent(currentPath), true);
 
     xhr.upload.onprogress = function(e) {
+      bytesSent = e.loaded;
       if (e.lengthComputable && onProgress) {
         onProgress(e.loaded, e.total);
       }
@@ -5727,20 +5904,17 @@ function uploadFileHTTP(file, onProgress, onComplete, onError) {
     xhr.onload = function() {
       currentUploadXhr = null;
       if (xhr.status === 200) {
-        if (onComplete) onComplete();
         resolve();
       } else {
-        const error = xhr.responseText || 'Upload failed';
-        if (onError) onError(error);
-        reject(new Error(error));
+        reject(new Error(xhr.responseText || 'Upload failed'));
       }
     };
 
     xhr.onerror = function() {
       currentUploadXhr = null;
-      const error = 'Network error';
-      if (onError) onError(error);
-      reject(new Error(error));
+      const error = new Error('Network error');
+      error.nothingSent = bytesSent === 0;
+      reject(error);
     };
 
     xhr.onabort = function() {
@@ -5779,6 +5953,7 @@ async function uploadFile() {
   const myGeneration = uploadGeneration;
   document.getElementById('uploadModalClose').classList.add('disabled');
   fileInput.disabled = true;
+  renderSelectedUploadFiles();
 
   const progressContainer = document.getElementById('progress-container');
   const progressFill = document.getElementById('progress-fill');
@@ -6072,12 +6247,7 @@ function retrySingleUpload(index) {
   const failedFile = failedUploadsGlobal[index];
   if (!failedFile) return;
 
-  // Create a DataTransfer to set the file input
-  const dt = new DataTransfer();
-  dt.items.add(failedFile.file);
-
-  const fileInput = document.getElementById('fileInput');
-  fileInput.files = dt.files;
+  setSelectedUploadFiles([failedFile.file]);
 
   // Remove this file from failed list
   failedUploadsGlobal.splice(index, 1);
@@ -6095,14 +6265,7 @@ function retrySingleUpload(index) {
 function retryAllFailedUploads() {
   if (failedUploadsGlobal.length === 0) return;
 
-  // Create a DataTransfer with all failed files
-  const dt = new DataTransfer();
-  failedUploadsGlobal.forEach(failedFile => {
-    dt.items.add(failedFile.file);
-  });
-
-  const fileInput = document.getElementById('fileInput');
-  fileInput.files = dt.files;
+  setSelectedUploadFiles(failedUploadsGlobal.map(failedFile => failedFile.file));
 
   // Clear failed files list
   failedUploadsGlobal = [];
