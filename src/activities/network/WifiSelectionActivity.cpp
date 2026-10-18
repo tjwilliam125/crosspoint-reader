@@ -188,11 +188,17 @@ void WifiSelectionActivity::startWifiScan(const bool autoScan) {
   // The cached rows point into the cleared networks' strings; drop them too.
   networkStatuses.clear();
   networkRowItems.clear();
+  scanRetries = 0;
   requestUpdate();
 
-  // Set WiFi mode to station
+  // Set WiFi mode to station and fully stop any join in progress. After a
+  // failed join (e.g. the last network is out of range) the core's
+  // auto-reconnect keeps retrying in the background, and the driver refuses
+  // to scan while it is connecting, so the scan would fail and only the
+  // hidden-network entry would be listed. attemptConnection() re-enables it.
   WiFi.mode(WIFI_STA);
-  WiFi.disconnect();
+  WiFi.setAutoReconnect(false);
+  WiFi.disconnect(false, true);
   delay(100);
 
   // Start async scan
@@ -208,8 +214,18 @@ void WifiSelectionActivity::processWifiScanResults() {
   }
 
   if (scanResult == WIFI_SCAN_FAILED) {
+    if (scanRetries < MAX_SCAN_RETRIES) {
+      scanRetries++;
+      LOG_DBG("WIFI", "Scan failed, retrying (%u/%u)", static_cast<unsigned>(scanRetries),
+              static_cast<unsigned>(MAX_SCAN_RETRIES));
+      WiFi.disconnect(false, true);
+      delay(200);
+      WiFi.scanNetworks(true);
+      return;
+    }
     networks.clear();
     realNetworkCount = 0;
+    appendSavedUnseenNetworks();
     appendHiddenNetworkEntry();
     rebuildNetworkRowItems();
     autoConnecting = false;
@@ -257,6 +273,7 @@ void WifiSelectionActivity::processWifiScanResults() {
   });
 
   realNetworkCount = networks.size();
+  appendSavedUnseenNetworks();
   appendHiddenNetworkEntry();
   rebuildNetworkRowItems();
 
@@ -270,6 +287,24 @@ void WifiSelectionActivity::processWifiScanResults() {
   state = WifiSelectionState::NETWORK_LIST;
   selectedNetworkIndex = 0;
   requestUpdate();
+}
+
+void WifiSelectionActivity::appendSavedUnseenNetworks() {
+  // Saved networks the scan missed (hidden SSID, out of range, or a missed
+  // beacon) are still listed, after every scanned network, so they can be
+  // joined without retyping the SSID.
+  for (const auto& saved : WIFI_STORE.getCredentialSummaries()) {
+    const auto it = std::find_if(networks.begin(), networks.end(),
+                                 [&saved](const WifiNetworkInfo& n) { return n.ssid == saved.ssid; });
+    if (it != networks.end()) continue;
+    WifiNetworkInfo network;
+    network.ssid = saved.ssid;
+    network.rssi = 0;
+    network.isEncrypted = saved.hasPassword;
+    network.hasSavedPassword = true;
+    network.notInScan = true;
+    networks.push_back(std::move(network));
+  }
 }
 
 void WifiSelectionActivity::appendHiddenNetworkEntry() {
@@ -294,8 +329,9 @@ void WifiSelectionActivity::rebuildNetworkRowItems() {
   for (size_t i = 0; i < networks.size(); i++) {
     const auto& network = networks[i];
     if (!network.isHiddenPlaceholder) {
+      // Saved-but-unseen networks have no signal reading; "--" marks them.
       networkStatuses[i] = std::string(network.hasSavedPassword ? "+ " : "") + (network.isEncrypted ? "* " : "") +
-                           getSignalStrengthIndicator(network.rssi);
+                           (network.notInScan ? "  --" : getSignalStrengthIndicator(network.rssi));
     }
     fui::ListItem item;
     item.label = network.isHiddenPlaceholder ? tr(STR_ADD_HIDDEN_NETWORK) : network.ssid.c_str();
@@ -411,7 +447,9 @@ bool WifiSelectionActivity::tryAutoConnectCredential(const WifiCredential& cred)
 
 bool WifiSelectionActivity::tryNextSavedNetworkFromScan() {
   for (const auto& network : networks) {
-    if (!network.hasSavedPassword || hasAttemptedAutoSsid(network.ssid)) {
+    // Unseen saved networks are listed for one-tap joining but not auto-tried:
+    // at a new location each would cost a full connection timeout.
+    if (!network.hasSavedPassword || network.notInScan || hasAttemptedAutoSsid(network.ssid)) {
       continue;
     }
 
@@ -486,6 +524,10 @@ void WifiSelectionActivity::attemptConnection() {
   } else {
     LOG_ERR("WIFI", "Failed to read station MAC for hostname (err=%d)", static_cast<int>(macResult));
   }
+
+  // startWifiScan() turns auto-reconnect off; restore the core default so the
+  // joined connection recovers from brief drops.
+  WiFi.setAutoReconnect(true);
 
   if (selectedRequiresPassword && !enteredPassword.empty()) {
     WiFi.begin(selectedSSID.c_str(), enteredPassword.c_str());

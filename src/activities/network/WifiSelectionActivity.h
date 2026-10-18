@@ -21,6 +21,7 @@ struct WifiNetworkInfo {
   bool isEncrypted;
   bool hasSavedPassword;             // Whether we have saved credentials for this network
   bool isHiddenPlaceholder = false;  // Synthetic "Add hidden network..." list entry
+  bool notInScan = false;            // Saved network the scan did not see (hidden SSID or out of range)
 };
 
 // WiFi selection states
@@ -54,8 +55,13 @@ class WifiSelectionActivity final : public Activity, private UiAppHost {
   WifiSelectionState state = WifiSelectionState::SCANNING;
   size_t selectedNetworkIndex = 0;
   std::vector<WifiNetworkInfo> networks;
-  // Number of real (scanned) networks, excluding the synthetic hidden-network entry
+  // Number of real (scanned) networks, excluding saved-but-unseen and the synthetic hidden-network entry
   size_t realNetworkCount = 0;
+
+  // A scan can fail transiently (e.g. the driver is still busy with a previous
+  // join); it is restarted this many times before the list is shown.
+  static constexpr uint8_t MAX_SCAN_RETRIES = 2;
+  uint8_t scanRetries = 0;
 
   // Row buffers derived from `networks`, rebuilt only when it changes
   // (processWifiScanResults()) instead of on every repaint — buildListScreen()
@@ -125,6 +131,7 @@ class WifiSelectionActivity final : public Activity, private UiAppHost {
 
   void startWifiScan(bool autoScan = false);
   void processWifiScanResults();
+  void appendSavedUnseenNetworks();
   void appendHiddenNetworkEntry();
   void selectNetwork(int index);
   void promptHiddenSsid();
