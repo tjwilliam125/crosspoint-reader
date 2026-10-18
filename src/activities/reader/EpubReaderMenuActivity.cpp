@@ -3,6 +3,7 @@
 #include <BlePageTurner.h>
 #include <GfxRenderer.h>
 #include <HalFrontlight.h>
+#include <HalStorage.h>
 #include <I18n.h>
 
 #include "CrossPointSettings.h"
@@ -44,6 +45,9 @@ void EpubReaderMenuActivity::buildMenuItems(std::vector<MenuItem>& items, const 
   items.clear();
   items.reserve(MAX_MENU_ITEMS);
   items.push_back({MenuAction::SELECT_CHAPTER, StrId::STR_SELECT_CHAPTER});
+  if (Storage.exists(ARTICLES_FOLDER)) {
+    items.push_back({MenuAction::GO_TO_ARTICLES, StrId::STR_GO_TO_ARTICLES});
+  }
   items.push_back({MenuAction::GO_HOME, StrId::STR_GO_HOME_BUTTON});
   if (hasFootnotes) {
     items.push_back({MenuAction::FOOTNOTES, StrId::STR_FOOTNOTES});

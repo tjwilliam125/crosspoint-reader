@@ -1204,6 +1204,10 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       onGoHome();
       return;
     }
+    case EpubReaderMenuActivity::MenuAction::GO_TO_ARTICLES: {
+      activityManager.goToFileBrowser(ARTICLES_FOLDER);
+      return;
+    }
     case EpubReaderMenuActivity::MenuAction::DELETE_CACHE: {
       {
         RenderLock lock;
@@ -3129,7 +3133,7 @@ void EpubReaderActivity::activateMoreRow(int row) {
   onReaderMenuConfirm(action);
   // Actions that neither open a screen nor leave the reader (a sync with no
   // credentials, say) would otherwise leave the closed panel on screen.
-  if (action != MA::GO_HOME && action != MA::DELETE_CACHE) requestUpdate();
+  if (action != MA::GO_HOME && action != MA::GO_TO_ARTICLES && action != MA::DELETE_CACHE) requestUpdate();
 }
 
 void EpubReaderActivity::navigateToHref(const std::string& hrefStr, const bool savePosition) {
