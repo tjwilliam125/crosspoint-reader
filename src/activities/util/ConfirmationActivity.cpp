@@ -7,12 +7,14 @@
 
 ConfirmationActivity::ConfirmationActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                            const std::string& heading, const std::string& body,
-                                           const std::string& cancelLabel, const std::string& confirmLabel)
+                                           const std::string& cancelLabel, const std::string& confirmLabel,
+                                           const bool defaultToConfirm)
     : Activity("Confirmation", renderer, mappedInput),
       heading(heading),
       body(body),
       cancelLabel(cancelLabel),
-      confirmLabel(confirmLabel) {}
+      confirmLabel(confirmLabel),
+      defaultToConfirm(defaultToConfirm) {}
 
 void ConfirmationActivity::onEnter() {
   Activity::onEnter();
@@ -24,7 +26,7 @@ void ConfirmationActivity::onEnter() {
       cancelLabel.empty() ? I18N.get(StrId::STR_CANCEL) : cancelLabel.c_str(),
       confirmLabel.empty() ? I18N.get(StrId::STR_CONFIRM) : confirmLabel.c_str(),
   };
-  confirmPopup.show(heading.c_str(), body.c_str(), options, 2, 0, [this](int idx) {
+  confirmPopup.show(heading.c_str(), body.c_str(), options, 2, defaultToConfirm ? 1 : 0, [this](int idx) {
     ActivityResult res;
     res.isCancelled = (idx != 1);
     setResult(std::move(res));
