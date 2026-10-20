@@ -87,6 +87,8 @@ class ClipSelectionActivity final : public Activity {
   // ponytail: retain 16 button frames during refresh; increase only if overflow is observed.
   std::array<uint8_t, 16> pendingButtons{};
   size_t pendingButtonCount = 0;
+  // How long Select was held before its last release; picks word vs phrase in Lookup mode.
+  unsigned long confirmHeldMs = 0;
   WordSelectionInput selectionInput;
   int fontId = 0;
   int lineHeight = 0;

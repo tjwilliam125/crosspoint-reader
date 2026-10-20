@@ -15,6 +15,7 @@
 #include "ClippingStore.h"
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "ReaderUtils.h"
 #include "activities/ActivityResult.h"
 #include "clippings/ClippingText.h"
 #include "clippings/SelectionGeometry.h"
@@ -391,6 +392,7 @@ bool ClipSelectionActivity::handleHomeGesture() {
 
 void ClipSelectionActivity::loopButtons() {
   const uint8_t buttons = selectionInput.pollButtons(mappedInput, millis());
+  if (buttons & Input::INPUT_CONFIRM) confirmHeldMs = mappedInput.getHeldTime();
   if (buttons) {
     if (pendingButtonCount < pendingButtons.size()) {
       pendingButtons[pendingButtonCount++] = buttons;
@@ -529,6 +531,7 @@ void ClipSelectionActivity::loop() {
   }
 
   const uint8_t buttons = Input::buttonEdges(mappedInput);
+  if (buttons & Input::INPUT_CONFIRM) confirmHeldMs = mappedInput.getHeldTime();
   if (buttons & (Input::INPUT_BACK | Input::INPUT_CONFIRM)) {
     handleButtons(buttons);
     return;
@@ -564,6 +567,11 @@ bool ClipSelectionActivity::handleButtons(const uint8_t buttons) {
   }
 
   if (buttons & Input::INPUT_CONFIRM) {
+    // Lookup: a short Select looks up the word under the cursor at once; holding
+    // Select anchors a phrase, which a second Select then looks up.
+    if (mode == Mode::Lookup && rangeStart < 0 && confirmHeldMs < ReaderUtils::BOOKMARK_HOLD_MS) {
+      rangeStart = selected;
+    }
     confirmSelection(mode == Mode::Lookup ? ClippingResult::Action::Lookup : ClippingResult::Action::Clip);
     return true;
   }
@@ -728,7 +736,8 @@ bool ClipSelectionActivity::renderIncremental() {
     const WordBox& cursor = words[selected];
     renderer.drawRect(cursor.x + offsetX, cursor.y + offset, cursor.width, cursor.height, true);
 
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), mode == Mode::Lookup ? tr(STR_LOOKUP) : tr(STR_SELECT),
+                                              tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
 
@@ -844,7 +853,7 @@ void ClipSelectionActivity::render(RenderLock&&) {
   renderer.setClipRect(clip[0], clip[1], clip[2], clip[3]);
 
   const auto labels = mappedInput.mapLabels(
-      tr(STR_BACK), rangeStart < 0 ? tr(STR_SELECT) : (mode == Mode::Lookup ? tr(STR_LOOKUP) : tr(STR_DONE)),
+      tr(STR_BACK), mode == Mode::Lookup ? tr(STR_LOOKUP) : (rangeStart < 0 ? tr(STR_SELECT) : tr(STR_DONE)),
       tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   renderer.displayBuffer();

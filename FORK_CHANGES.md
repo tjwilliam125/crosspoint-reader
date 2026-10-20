@@ -27,6 +27,14 @@ A delete now takes long-press, Select, Select. Back still cancels at either
 step. Other confirmation dialogs still start on Cancel: `ConfirmationActivity`
 takes an opt-in `defaultToConfirm` flag, and only the two delete dialogs set it.
 
+## Dictionary lookup
+
+- **One-press lookup.** In the word picker, a short press of Select looks up the
+  word under the cursor straight away. The button hint reads "Look Up".
+- **Phrases.** Hold Select for about 0.4 s (`ReaderUtils::BOOKMARK_HOLD_MS`) to
+  start a phrase, extend it with Left/Right or Up/Down, then press Select to
+  look it up. Clipping selection is unchanged.
+
 ## Wi-Fi
 
 - **Saved networks after a failed auto-connect.** The network list used to show
@@ -68,7 +76,7 @@ unpacks with Windows 11 `tar -xf`).
 - **Settings.** Choose **en-en** in Settings → Reader → Dictionary. For the
   quickest lookups, set Settings → Controls → **Long-press Menu** to
   "Dictionary". Then hold Select on a reading page, move to the word, and press
-  Select twice.
+  Select once.
 - **First lookup.** The first lookup builds `.qidx` and `.sidx` index files next
   to the dictionary, which takes a while.
 
